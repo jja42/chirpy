@@ -19,7 +19,8 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func (cfg *apiConfig) handlerMetrics(writer http.ResponseWriter, req *http.Request) {
-	str := fmt.Sprintf("Hits: %d", cfg.fileserverHits.Load())
+	str := fmt.Sprintf("<html>\n<body>\n<h1>Welcome, Chirpy Admin</h1>\n<p>Chirpy has been visited %d times!</p>\n</body>\n</html>", cfg.fileserverHits.Load())
+	writer.Header().Set("Content-Type", "text/html")
 	writer.Write([]byte(str))
 }
 
