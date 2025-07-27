@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 )
 
@@ -26,4 +28,36 @@ func (cfg *apiConfig) handlerMetrics(writer http.ResponseWriter, req *http.Reque
 
 func (cfg *apiConfig) handlerReset(writer http.ResponseWriter, req *http.Request) {
 	cfg.fileserverHits.Store(0)
+}
+
+func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
+	type Chirp struct {
+		Body string `json:"body"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	chirp := Chirp{}
+	err := decoder.Decode(&chirp)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(writer, 500, "Unable to Decode JSON", err)
+		return
+	}
+
+	type Response struct {
+		CleanedBody string `json:"cleaned_body"`
+	}
+
+	if len(chirp.Body) > 140 {
+		respondWithError(writer, 400, "Chirp is too long", err)
+		return
+	}
+
+	cleaned_body := replaceProfaneText(chirp.Body)
+
+	response := Response{
+		CleanedBody: cleaned_body,
+	}
+
+	respondWithJSON(writer, 200, response)
 }
