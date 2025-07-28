@@ -61,3 +61,6 @@ func handlerValidateChirp(writer http.ResponseWriter, req *http.Request) {
 
 	respondWithJSON(writer, 200, response)
 }
+
+func handlerCreateUser(writer http.ResponseWriter, req *http.Request) {
+}

@@ -2,6 +2,9 @@ package main
 
 import (
 	"strings"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 func replaceProfaneWord(word string) string {
@@ -24,4 +27,11 @@ func replaceProfaneText(text string) string {
 	}
 	cleaned_text := strings.Join(new_text, " ")
 	return cleaned_text
+}
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
 }
