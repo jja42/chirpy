@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/jja42/chirpy/internal/auth"
 	"github.com/jja42/chirpy/internal/database"
 )
 
@@ -42,6 +43,75 @@ func (cfg *apiConfig) handlerReset(writer http.ResponseWriter, req *http.Request
 		respondWithError(writer, 500, "Unable to Delete Users", err)
 		return
 	}
+}
+
+func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Request) {
+	type Parameters struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := Parameters{}
+
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(writer, 500, "Unable to Decode JSON", err)
+		return
+	}
+
+	hashed_password, err := auth.HashPassword(params.Password)
+	if err != nil {
+		log.Printf("Error hashing password: %s", err)
+		respondWithError(writer, 500, "Unable to Create User", err)
+		return
+	}
+
+	user_params := database.CreateUserParams{Email: params.Email, HashedPassword: hashed_password}
+
+	user, err := cfg.db.CreateUser(req.Context(), user_params)
+	if err != nil {
+		respondWithError(writer, 500, "Unable to Create User", err)
+		return
+	}
+
+	user_response := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+
+	respondWithJSON(writer, 201, user_response)
+}
+
+func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
+	type Parameters struct {
+		Password string `json:"password"`
+		Email    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := Parameters{}
+
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(writer, 500, "Unable to Decode JSON", err)
+		return
+	}
+
+	user, err := cfg.db.GetUser(req.Context(), params.Email)
+	if err != nil {
+		respondWithError(writer, 401, "Incorrect email or password", err)
+		return
+	}
+
+	err = auth.CheckPasswordHash(params.Password, user.HashedPassword)
+	if err != nil {
+		respondWithError(writer, 401, "Incorrect email or password", err)
+		return
+	}
+
+	user_response := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+
+	respondWithJSON(writer, 200, user_response)
 }
 
 func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.Request) {
@@ -83,32 +153,6 @@ func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.R
 	response := Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID}
 
 	respondWithJSON(writer, 201, response)
-}
-
-func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Request) {
-	type Parameters struct {
-		Email string `json:"email"`
-	}
-
-	decoder := json.NewDecoder(req.Body)
-	params := Parameters{}
-
-	err := decoder.Decode(&params)
-	if err != nil {
-		log.Printf("Error decoding parameters: %s", err)
-		respondWithError(writer, 500, "Unable to Decode JSON", err)
-		return
-	}
-
-	user, err := cfg.db.CreateUser(req.Context(), params.Email)
-	if err != nil {
-		respondWithError(writer, 500, "Unable to Create User", err)
-		return
-	}
-
-	user_response := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
-
-	respondWithJSON(writer, 201, user_response)
 }
 
 func (cfg *apiConfig) handlerGetChirps(writer http.ResponseWriter, req *http.Request) {
