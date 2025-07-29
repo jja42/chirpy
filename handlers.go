@@ -107,3 +107,25 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 
 	respondWithJSON(writer, 201, user_response)
 }
+
+func (cfg *apiConfig) handlerGetChirps(writer http.ResponseWriter, req *http.Request) {
+	chirps, err := cfg.db.GetChirps(req.Context())
+	if err != nil {
+		respondWithError(writer, 500, "Unable to Get Chirps", err)
+		return
+	}
+
+	var Chirps []Chirp
+
+	for _, chirp := range chirps {
+		Chirps = append(Chirps, Chirp{
+			ID:        chirp.ID,
+			CreatedAt: chirp.CreatedAt,
+			UpdatedAt: chirp.UpdatedAt,
+			Body:      chirp.Body,
+			UserID:    chirp.UserID,
+		})
+	}
+
+	respondWithJSON(writer, 200, Chirps)
+}
