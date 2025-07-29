@@ -34,11 +34,14 @@ func (cfg *apiConfig) handlerReset(writer http.ResponseWriter, req *http.Request
 		respondWithError(writer, 403, "Access Forbidden", nil)
 		return
 	}
+
+	cfg.fileserverHits.Store(0)
+
 	err := cfg.db.DeleteUsers(req.Context())
 	if err != nil {
 		respondWithError(writer, 500, "Unable to Delete Users", err)
+		return
 	}
-	cfg.fileserverHits.Store(0)
 }
 
 func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.Request) {
@@ -128,4 +131,23 @@ func (cfg *apiConfig) handlerGetChirps(writer http.ResponseWriter, req *http.Req
 	}
 
 	respondWithJSON(writer, 200, Chirps)
+}
+
+func (cfg *apiConfig) handlerGetChirp(writer http.ResponseWriter, req *http.Request) {
+	id_string := req.PathValue("chirpID")
+	id, err := uuid.Parse(id_string)
+	if err != nil {
+		respondWithError(writer, 500, "Could Not Parse UUID from Path Value", err)
+		return
+	}
+
+	chirp, err := cfg.db.GetChirp(req.Context(), id)
+	if err != nil {
+		respondWithError(writer, 404, "Chirp Not Found", err)
+		return
+	}
+
+	response := Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.CreatedAt, Body: chirp.Body, UserID: chirp.UserID}
+
+	respondWithJSON(writer, 200, response)
 }
