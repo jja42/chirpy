@@ -82,6 +82,55 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 	respondWithJSON(writer, 201, user_response)
 }
 
+func (cfg *apiConfig) handlerUpdateUser(writer http.ResponseWriter, req *http.Request) {
+	//Get Access Token
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(writer, 401, "Unable to Get Client Token", err)
+		return
+	}
+
+	user_id, err := auth.ValidateJWT(token, cfg.jwt_secret)
+	if err != nil {
+		respondWithError(writer, 401, "Unauthorized Request", err)
+		return
+	}
+
+	//New Params
+	type Parameters struct {
+		NewPassword string `json:"password"`
+		NewEmail    string `json:"email"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := Parameters{}
+
+	err = decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(writer, 500, "Unable to Decode JSON", err)
+		return
+	}
+
+	hashed_password, err := auth.HashPassword(params.NewPassword)
+	if err != nil {
+		log.Printf("Error hashing password: %s", err)
+		respondWithError(writer, 500, "Unable to Update User", err)
+		return
+	}
+
+	//Update User
+	user, err := cfg.db.UpdateUser(req.Context(), database.UpdateUserParams{ID: user_id, Email: params.NewEmail, HashedPassword: hashed_password})
+	if err != nil {
+		respondWithError(writer, 401, "Incorrect email or password", err)
+		return
+	}
+
+	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+
+	respondWithJSON(writer, 200, user_response)
+}
+
 func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
 	type Parameters struct {
 		Password string `json:"password"`
@@ -131,7 +180,7 @@ func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.R
 
 	token, err := auth.GetBearerToken(req.Header)
 	if err != nil {
-		respondWithError(writer, 500, "Unable to Get Client Token", err)
+		respondWithError(writer, 401, "Unable to Get Client Token", err)
 		return
 	}
 
