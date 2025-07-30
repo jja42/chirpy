@@ -84,11 +84,9 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 
 func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
 	type Parameters struct {
-		Password  string `json:"password"`
-		Email     string `json:"email"`
-		ExpiresIn *int   `json:"expires_in_seconds,omitempty"` // Optional
+		Password string `json:"password"`
+		Email    string `json:"email"`
 	}
-	defaultExpires := 3600
 
 	decoder := json.NewDecoder(req.Body)
 	params := Parameters{}
@@ -98,14 +96,6 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		log.Printf("Error decoding parameters: %s", err)
 		respondWithError(writer, 500, "Unable to Decode JSON", err)
 		return
-	}
-
-	if params.ExpiresIn == nil {
-		params.ExpiresIn = &defaultExpires
-	}
-
-	if *params.ExpiresIn > 3600 {
-		params.ExpiresIn = &defaultExpires
 	}
 
 	user, err := cfg.db.GetUser(req.Context(), params.Email)
@@ -120,13 +110,19 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		return
 	}
 
-	token, err := auth.MakeJWT(user.ID, cfg.jwt_secret, time.Duration(*params.ExpiresIn)*time.Second)
+	token, err := auth.MakeJWT(user.ID, cfg.jwt_secret, time.Hour)
 	if err != nil {
 		respondWithError(writer, 401, "Unable to Make JWT", err)
 		return
 	}
 
-	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, Token: token}
+	refresh_token := auth.MakeRefreshToken()
+
+	cfg.db.CreateRefreshToken(req.Context(), database.CreateRefreshTokenParams{
+		Token: refresh_token, UserID: user.ID, ExpiresAt: time.Now().AddDate(0, 0, 60),
+	})
+
+	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, Token: token, RefreshToken: refresh_token}
 
 	respondWithJSON(writer, 200, user_response)
 }
@@ -222,4 +218,60 @@ func (cfg *apiConfig) handlerGetChirp(writer http.ResponseWriter, req *http.Requ
 	response := ChirpResponse{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.CreatedAt, Body: chirp.Body, UserID: chirp.UserID}
 
 	respondWithJSON(writer, 200, response)
+}
+
+func (cfg *apiConfig) handlerRefresh(writer http.ResponseWriter, req *http.Request) {
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(writer, 500, "Unable to Get Refresh Token from Header", err)
+		return
+	}
+
+	refresh_token, err := cfg.db.GetRefreshToken(req.Context(), token)
+	if err != nil {
+		respondWithError(writer, 401, "Unable to Get Refresh Token from Database", err)
+		return
+	}
+
+	expired := refresh_token.ExpiresAt.Before(time.Now())
+	if expired {
+		respondWithError(writer, 401, "Refresh Token is Expired", err)
+		return
+	}
+
+	revoked := refresh_token.RevokedAt.Valid
+	if revoked {
+		respondWithError(writer, 401, "Refresh Token is Revoked", err)
+		return
+	}
+
+	access_token, err := auth.MakeJWT(refresh_token.UserID, cfg.jwt_secret, time.Hour)
+	if err != nil {
+		respondWithError(writer, 401, "Unable to Make JWT", err)
+		return
+	}
+
+	type Response struct {
+		Token string `json:"token"`
+	}
+
+	response := Response{Token: access_token}
+
+	respondWithJSON(writer, 200, response)
+}
+
+func (cfg *apiConfig) handlerRevoke(writer http.ResponseWriter, req *http.Request) {
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(writer, 500, "Unable to Get Refresh Token from Header", err)
+		return
+	}
+
+	err = cfg.db.RevokeRefreshToken(req.Context(), token)
+	if err != nil {
+		respondWithError(writer, 401, "Unable to Revoke Token. Does Not Exist.", err)
+		return
+	}
+
+	respondWithJSON(writer, 204, nil)
 }
