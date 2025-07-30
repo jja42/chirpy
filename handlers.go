@@ -254,7 +254,7 @@ func (cfg *apiConfig) handlerGetChirp(writer http.ResponseWriter, req *http.Requ
 	id_string := req.PathValue("chirpID")
 	id, err := uuid.Parse(id_string)
 	if err != nil {
-		respondWithError(writer, 500, "Could Not Parse UUID from Path Value", err)
+		respondWithError(writer, 500, "Could Not Parse Chirp ID from Path Value", err)
 		return
 	}
 
@@ -267,6 +267,42 @@ func (cfg *apiConfig) handlerGetChirp(writer http.ResponseWriter, req *http.Requ
 	response := ChirpResponse{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.CreatedAt, Body: chirp.Body, UserID: chirp.UserID}
 
 	respondWithJSON(writer, 200, response)
+}
+
+func (cfg *apiConfig) handlerDeleteChirp(writer http.ResponseWriter, req *http.Request) {
+	id_string := req.PathValue("chirpID")
+	id, err := uuid.Parse(id_string)
+	if err != nil {
+		respondWithError(writer, 500, "Could Not Parse Chirp ID from Path Value", err)
+		return
+	}
+
+	chirp, err := cfg.db.GetChirp(req.Context(), id)
+	if err != nil {
+		respondWithError(writer, 404, "Chirp Not Found", err)
+		return
+	}
+
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(writer, 401, "Unable to Get Client Token", err)
+		return
+	}
+
+	user_id, err := auth.ValidateJWT(token, cfg.jwt_secret)
+	if err != nil {
+		respondWithError(writer, 401, "Unauthorized Request", err)
+		return
+	}
+
+	if chirp.UserID != user_id {
+		respondWithError(writer, 403, "Unauthorized Request", err)
+		return
+	}
+
+	cfg.db.DeleteChirp(req.Context(), chirp.ID)
+
+	respondWithJSON(writer, 204, nil)
 }
 
 func (cfg *apiConfig) handlerRefresh(writer http.ResponseWriter, req *http.Request) {
