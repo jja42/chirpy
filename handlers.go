@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jja42/chirpy/internal/auth"
@@ -76,16 +77,18 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	user_response := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
 
 	respondWithJSON(writer, 201, user_response)
 }
 
 func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request) {
 	type Parameters struct {
-		Password string `json:"password"`
-		Email    string `json:"email"`
+		Password  string `json:"password"`
+		Email     string `json:"email"`
+		ExpiresIn *int   `json:"expires_in_seconds,omitempty"` // Optional
 	}
+	defaultExpires := 3600
 
 	decoder := json.NewDecoder(req.Body)
 	params := Parameters{}
@@ -95,6 +98,14 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		log.Printf("Error decoding parameters: %s", err)
 		respondWithError(writer, 500, "Unable to Decode JSON", err)
 		return
+	}
+
+	if params.ExpiresIn == nil {
+		params.ExpiresIn = &defaultExpires
+	}
+
+	if *params.ExpiresIn > 3600 {
+		params.ExpiresIn = &defaultExpires
 	}
 
 	user, err := cfg.db.GetUser(req.Context(), params.Email)
@@ -109,22 +120,39 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		return
 	}
 
-	user_response := User{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+	token, err := auth.MakeJWT(user.ID, cfg.jwt_secret, time.Duration(*params.ExpiresIn)*time.Second)
+	if err != nil {
+		respondWithError(writer, 401, "Unable to Make JWT", err)
+		return
+	}
+
+	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, Token: token}
 
 	respondWithJSON(writer, 200, user_response)
 }
 
 func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.Request) {
 
+	token, err := auth.GetBearerToken(req.Header)
+	if err != nil {
+		respondWithError(writer, 500, "Unable to Get Client Token", err)
+		return
+	}
+
+	user_id, err := auth.ValidateJWT(token, cfg.jwt_secret)
+	if err != nil {
+		respondWithError(writer, 401, "Unauthorized Request", err)
+		return
+	}
+
 	//Ported Validate Chirp Logic
 	type Request struct {
-		Body   string    `json:"body"`
-		UserID uuid.UUID `json:"user_id"`
+		Body string `json:"body"`
 	}
 
 	decoder := json.NewDecoder(req.Body)
 	r := Request{}
-	err := decoder.Decode(&r)
+	err = decoder.Decode(&r)
 	if err != nil {
 		log.Printf("Error decoding parameters: %s", err)
 		respondWithError(writer, 500, "Unable to Decode JSON", err)
@@ -142,7 +170,7 @@ func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.R
 
 	//Now we need to touch the database
 
-	params := database.CreateChirpParams{Body: cleaned_body, UserID: r.UserID}
+	params := database.CreateChirpParams{Body: cleaned_body, UserID: user_id}
 
 	chirp, err := cfg.db.CreateChirp(req.Context(), params)
 	if err != nil {
@@ -150,7 +178,7 @@ func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.R
 		return
 	}
 
-	response := Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID}
+	response := ChirpResponse{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.UpdatedAt, Body: chirp.Body, UserID: chirp.UserID}
 
 	respondWithJSON(writer, 201, response)
 }
@@ -162,10 +190,10 @@ func (cfg *apiConfig) handlerGetChirps(writer http.ResponseWriter, req *http.Req
 		return
 	}
 
-	var Chirps []Chirp
+	var Chirps []ChirpResponse
 
 	for _, chirp := range chirps {
-		Chirps = append(Chirps, Chirp{
+		Chirps = append(Chirps, ChirpResponse{
 			ID:        chirp.ID,
 			CreatedAt: chirp.CreatedAt,
 			UpdatedAt: chirp.UpdatedAt,
@@ -191,7 +219,7 @@ func (cfg *apiConfig) handlerGetChirp(writer http.ResponseWriter, req *http.Requ
 		return
 	}
 
-	response := Chirp{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.CreatedAt, Body: chirp.Body, UserID: chirp.UserID}
+	response := ChirpResponse{ID: chirp.ID, CreatedAt: chirp.CreatedAt, UpdatedAt: chirp.CreatedAt, Body: chirp.Body, UserID: chirp.UserID}
 
 	respondWithJSON(writer, 200, response)
 }
