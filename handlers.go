@@ -77,7 +77,7 @@ func (cfg *apiConfig) handlerCreateUser(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, ChirpyRed: user.IsChirpyRed}
 
 	respondWithJSON(writer, 201, user_response)
 }
@@ -126,7 +126,7 @@ func (cfg *apiConfig) handlerUpdateUser(writer http.ResponseWriter, req *http.Re
 		return
 	}
 
-	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email}
+	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, ChirpyRed: user.IsChirpyRed}
 
 	respondWithJSON(writer, 200, user_response)
 }
@@ -171,7 +171,8 @@ func (cfg *apiConfig) handlerLogin(writer http.ResponseWriter, req *http.Request
 		Token: refresh_token, UserID: user.ID, ExpiresAt: time.Now().AddDate(0, 0, 60),
 	})
 
-	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt, Email: user.Email, Token: token, RefreshToken: refresh_token}
+	user_response := UserResponse{ID: user.ID, CreatedAt: user.CreatedAt, UpdatedAt: user.UpdatedAt,
+		Email: user.Email, Token: token, RefreshToken: refresh_token, ChirpyRed: user.IsChirpyRed}
 
 	respondWithJSON(writer, 200, user_response)
 }
@@ -355,6 +356,45 @@ func (cfg *apiConfig) handlerRevoke(writer http.ResponseWriter, req *http.Reques
 	err = cfg.db.RevokeRefreshToken(req.Context(), token)
 	if err != nil {
 		respondWithError(writer, 401, "Unable to Revoke Token. Does Not Exist.", err)
+		return
+	}
+
+	respondWithJSON(writer, 204, nil)
+}
+
+func (cfg *apiConfig) handlerPolka(writer http.ResponseWriter, req *http.Request) {
+	type data struct {
+		UserID string `json:"user_id"`
+	}
+
+	type Parameters struct {
+		Event string `json:"event"`
+		Data  data   `json:"data"`
+	}
+
+	decoder := json.NewDecoder(req.Body)
+	params := Parameters{}
+
+	err := decoder.Decode(&params)
+	if err != nil {
+		log.Printf("Error decoding parameters: %s", err)
+		respondWithError(writer, 500, "Unable to Decode JSON", err)
+		return
+	}
+
+	if params.Event != "user.upgraded" {
+		respondWithJSON(writer, 204, nil)
+	}
+
+	user_id, err := uuid.Parse(params.Data.UserID)
+	if err != nil {
+		respondWithError(writer, 500, "Unable to Parse User ID", err)
+		return
+	}
+
+	err = cfg.db.UpgradeUser(req.Context(), user_id)
+	if err != nil {
+		respondWithError(writer, 404, "Unable to Upgrade User", err)
 		return
 	}
 

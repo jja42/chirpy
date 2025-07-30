@@ -36,6 +36,7 @@ type UserResponse struct {
 	Email        string    `json:"email"`
 	Token        string    `json:"token,omitempty"`
 	RefreshToken string    `json:"refresh_token,omitempty"`
+	ChirpyRed    bool      `json:"is_chirpy_red"`
 }
 
 type ChirpResponse struct {
@@ -44,4 +45,8 @@ type ChirpResponse struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Body      string    `json:"body"`
 	UserID    uuid.UUID `json:"user_id"`
+}
+
+type PolkaResponse struct {
+	Event string
 }
