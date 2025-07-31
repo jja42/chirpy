@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
@@ -230,10 +231,34 @@ func (cfg *apiConfig) handlerCreateChirp(writer http.ResponseWriter, req *http.R
 }
 
 func (cfg *apiConfig) handlerGetChirps(writer http.ResponseWriter, req *http.Request) {
-	chirps, err := cfg.db.GetChirps(req.Context())
-	if err != nil {
-		respondWithError(writer, 500, "Unable to Get Chirps", err)
-		return
+	var chirps []database.Chirp
+	var err error
+
+	author_id := req.URL.Query().Get("author_id")
+
+	if author_id != "" {
+		user_id, err := uuid.Parse(author_id)
+		if err != nil {
+			respondWithError(writer, 500, "Unable to Parse Author ID", err)
+			return
+		}
+		chirps, err = cfg.db.GetAuthorChirps(req.Context(), user_id)
+		if err != nil {
+			respondWithError(writer, 500, "Unable to Get Chirps", err)
+			return
+		}
+	} else {
+		chirps, err = cfg.db.GetChirps(req.Context())
+		if err != nil {
+			respondWithError(writer, 500, "Unable to Get Chirps", err)
+			return
+		}
+	}
+
+	sort_param := req.URL.Query().Get("sort")
+
+	if sort_param == "desc" {
+		sort.Slice(chirps, func(i, j int) bool { return chirps[i].CreatedAt.After(chirps[j].CreatedAt) })
 	}
 
 	var Chirps []ChirpResponse
@@ -363,6 +388,17 @@ func (cfg *apiConfig) handlerRevoke(writer http.ResponseWriter, req *http.Reques
 }
 
 func (cfg *apiConfig) handlerPolka(writer http.ResponseWriter, req *http.Request) {
+	ApiKey, err := auth.GetAPIKey(req.Header)
+	if err != nil {
+		respondWithError(writer, 401, "Unable to Get API Key", err)
+		return
+	}
+
+	if ApiKey != cfg.polka_key {
+		respondWithError(writer, 401, "Invalid API Key", err)
+		return
+	}
+
 	type data struct {
 		UserID string `json:"user_id"`
 	}
@@ -375,7 +411,7 @@ func (cfg *apiConfig) handlerPolka(writer http.ResponseWriter, req *http.Request
 	decoder := json.NewDecoder(req.Body)
 	params := Parameters{}
 
-	err := decoder.Decode(&params)
+	err = decoder.Decode(&params)
 	if err != nil {
 		log.Printf("Error decoding parameters: %s", err)
 		respondWithError(writer, 500, "Unable to Decode JSON", err)
